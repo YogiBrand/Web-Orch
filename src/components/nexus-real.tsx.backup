@@ -1,0 +1,818 @@
+/**
+ * 🚀 NEXUS AI WORKSPACE - REAL IMPLEMENTATION
+ * Connected to actual agent registry with perfect design
+ */
+
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
+import { supabaseAgentRegistry, type Agent, type Project } from '@/lib/supabase-agent-registry';
+import LibreChatFull from '@/components/librechat-full';
+import {
+  Brain, Code, Terminal, Users, Play, Zap, Target, Plus,
+  MessageSquare, Database, Rocket, Activity, Settings,
+  CheckCircle, Clock, AlertCircle, Globe, Server,
+  Trash2, Edit3, ExternalLink, Wifi, WifiOff
+} from 'lucide-react';
+
+export default function NexusReal() {
+  const { toast } = useToast();
+  
+  // State
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  
+  // Load data from Supabase
+  const loadData = async () => {
+    try {
+      const [agentsData, projectsData] = await Promise.all([
+        supabaseAgentRegistry.getAllAgents(),
+        supabaseAgentRegistry.getAllProjects()
+      ]);
+      setAgents(agentsData);
+      setProjects(projectsData);
+      
+      // Auto-select first project if none selected
+      if (!selectedProject && projectsData.length > 0) {
+        setSelectedProject(projectsData[0]);
+      }
+      
+      // Update selected project with fresh data if it exists
+      if (selectedProject && projectsData.length > 0) {
+        const updatedProject = projectsData.find(p => p.id === selectedProject.id);
+        if (updatedProject) {
+          setSelectedProject(updatedProject);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+      toast({ title: "Error", description: "Failed to load data", variant: "destructive" });
+    }
+  };
+
+  // Load data on mount
+  useEffect(() => {
+    loadData();
+  }, []);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [activeTab, setActiveTab] = useState('overview');
+  
+  // Agent creation state
+  const [isAddingAgent, setIsAddingAgent] = useState(false);
+  const [newAgent, setNewAgent] = useState({
+    name: '',
+    type: 'api' as Agent['type'],
+    endpoint: '',
+    apiKey: '',
+    description: '',
+    model: '',
+    provider: '',
+    capabilities: ''
+  });
+  
+  // Project creation state
+  const [isAddingProject, setIsAddingProject] = useState(false);
+  const [newProject, setNewProject] = useState({
+    name: '',
+    description: '',
+    status: 'active' as Project['status']
+  });
+
+
+  // Status indicators
+  const StatusIndicator = ({ status }: { status: string }) => {
+    const colors = {
+      online: 'bg-green-500',
+      offline: 'bg-gray-400', 
+      connecting: 'bg-yellow-500',
+      error: 'bg-red-500',
+      active: 'bg-blue-500',
+      paused: 'bg-orange-500',
+      completed: 'bg-purple-500',
+      archived: 'bg-gray-500'
+    };
+    return <div className={`w-2 h-2 rounded-full ${colors[status as keyof typeof colors] || 'bg-gray-400'}`} />;
+  };
+
+  // Agent management
+  const handleAddAgent = async () => {
+    if (!newAgent.name.trim()) {
+      toast({ title: "Error", description: "Agent name is required", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const agent = await supabaseAgentRegistry.addAgent({
+        name: newAgent.name,
+        type: newAgent.type,
+        status: 'offline',
+        endpoint: newAgent.endpoint || undefined,
+        apiKey: newAgent.apiKey || undefined,
+        capabilities: newAgent.capabilities.split(',').map(c => c.trim()).filter(Boolean),
+        description: newAgent.description,
+        model: newAgent.model || undefined,
+        provider: newAgent.provider || undefined,
+        config: {}
+      });
+
+      setNewAgent({
+        name: '', type: 'api', endpoint: '', apiKey: '',
+        description: '', model: '', provider: '', capabilities: ''
+      });
+      setIsAddingAgent(false);
+      await loadData(); // Reload data after adding
+      
+      toast({ title: "Success", description: `Agent "${agent.name}" added successfully` });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add agent", variant: "destructive" });
+    }
+  };
+
+  const handleRemoveAgent = async (agentId: string) => {
+    const agent = await supabaseAgentRegistry.getAgent(agentId);
+    if (!agent) return;
+
+    await supabaseAgentRegistry.removeAgent(agentId);
+    await loadData(); // Reload data after removing
+    toast({ title: "Success", description: `Agent "${agent.name}" removed` });
+  };
+
+  const handleTestAgent = async (agentId: string) => {
+    const agent = await supabaseAgentRegistry.getAgent(agentId);
+    if (!agent) return;
+
+    try {
+      await supabaseAgentRegistry.updateAgent(agentId, { status: 'connecting' });
+      const isHealthy = await supabaseAgentRegistry.checkAgentHealth(agentId);
+      
+      if (isHealthy) {
+        toast({ title: "Success", description: `Agent "${agent.name}" is responding` });
+      } else {
+        toast({ title: "Error", description: `Agent "${agent.name}" failed health check`, variant: "destructive" });
+      }
+      await loadData(); // Reload data after testing
+    } catch (error) {
+      toast({ title: "Error", description: `Failed to test agent "${agent.name}"`, variant: "destructive" });
+    }
+  };
+
+  // Project management
+  const handleAddProject = async () => {
+    if (!newProject.name.trim()) {
+      toast({ title: "Error", description: "Project name is required", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const project = await supabaseAgentRegistry.createProject({
+        name: newProject.name,
+        description: newProject.description,
+        status: newProject.status,
+        assignedAgents: [],
+        settings: {}
+      });
+
+      setNewProject({ name: '', description: '', status: 'active' });
+      setIsAddingProject(false);
+      setSelectedProject(project);
+      await loadData(); // Reload data after creating
+      
+      toast({ title: "Success", description: `Project "${project.name}" created` });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to create project", variant: "destructive" });
+    }
+  };
+
+  const assignAgentToProject = async (agentId: string) => {
+    if (!selectedProject) return;
+    
+    const success = await supabaseAgentRegistry.assignAgentToProject(selectedProject.id, agentId);
+    if (success) {
+      await loadData(); // Reload data after assigning
+      toast({ title: "Success", description: "Agent assigned to project" });
+    } else {
+      toast({ title: "Error", description: "Failed to assign agent", variant: "destructive" });
+    }
+  };
+
+  const unassignAgentFromProject = async (agentId: string) => {
+    if (!selectedProject) return;
+    
+    const success = await supabaseAgentRegistry.unassignAgentFromProject(selectedProject.id, agentId);
+    if (success) {
+      await loadData(); // Reload data after unassigning
+      toast({ title: "Success", description: "Agent unassigned from project" });
+    }
+  };
+
+  // Get project statistics
+  const getProjectStats = () => {
+    if (!selectedProject) {
+      return { totalAgents: 0, onlineAgents: 0, totalRequests: 0, avgResponseTime: 0 };
+    }
+
+    const projectAgents = selectedProject ? agents.filter(a => selectedProject.assignedAgents.includes(a.id)) : [];
+    const onlineAgents = projectAgents.filter(a => a.status === 'online').length;
+    const totalRequests = projectAgents.reduce((sum, a) => sum + a.stats.totalRequests, 0);
+    const avgResponseTime = projectAgents.length > 0 
+      ? projectAgents.reduce((sum, a) => sum + a.stats.averageResponseTime, 0) / projectAgents.length 
+      : 0;
+
+    return {
+      totalAgents: projectAgents.length,
+      onlineAgents,
+      totalRequests,
+      avgResponseTime: Math.round(avgResponseTime)
+    };
+  };
+
+  const stats = getProjectStats();
+  const projectAgents = selectedProject ? agents.filter(a => selectedProject.assignedAgents.includes(a.id)) : [];
+
+  const renderOverview = () => (
+    <div className="grid gap-6">
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-blue-700">Total Agents</p>
+              <p className="text-3xl font-bold text-blue-900">{stats.totalAgents}</p>
+            </div>
+            <Brain className="h-10 w-10 text-blue-600" />
+          </div>
+        </Card>
+        
+        <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-green-700">Online</p>
+              <p className="text-3xl font-bold text-green-900">{stats.onlineAgents}</p>
+            </div>
+            <Wifi className="h-10 w-10 text-green-600" />
+          </div>
+        </Card>
+        
+        <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-purple-700">Total Requests</p>
+              <p className="text-3xl font-bold text-purple-900">{stats.totalRequests}</p>
+            </div>
+            <Activity className="h-10 w-10 text-purple-600" />
+          </div>
+        </Card>
+        
+        <Card className="p-6 bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-orange-700">Avg Response</p>
+              <p className="text-3xl font-bold text-orange-900">{stats.avgResponseTime}ms</p>
+            </div>
+            <Clock className="h-10 w-10 text-orange-600" />
+          </div>
+        </Card>
+      </div>
+
+      {/* Project Info & Assigned Agents */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        {/* Project Details */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Rocket className="h-5 w-5 text-blue-600" />
+              Project Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {selectedProject ? (
+              <>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">{selectedProject.name}</h3>
+                  <p className="text-gray-600 mt-1">{selectedProject.description}</p>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <StatusIndicator status={selectedProject.status} />
+                  <Badge variant="outline" className="capitalize">
+                    {selectedProject.status}
+                  </Badge>
+                  <span className="text-sm text-gray-500">
+                    Created {selectedProject.createdAt.toLocaleDateString()}
+                  </span>
+                </div>
+
+                <div className="pt-4 border-t">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Quick Actions</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline">
+                      <Settings className="h-4 w-4 mr-2" />
+                      Configure
+                    </Button>
+                    <Button size="sm" variant="outline">
+                      <Activity className="h-4 w-4 mr-2" />
+                      View Logs
+                    </Button>
+                    <Button size="sm" variant="outline">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Deploy
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-8">
+                <Rocket className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 mb-4">No project selected</p>
+                <Button onClick={() => setIsAddingProject(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Project
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Assigned Agents */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Brain className="h-5 w-5 text-purple-600" />
+                Assigned Agents
+              </div>
+              {selectedProject && (
+                <Button size="sm" onClick={() => setActiveTab('agents')}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Agent
+                </Button>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-80">
+              {projectAgents.length > 0 ? (
+                <div className="space-y-3">
+                  {projectAgents.map((agent) => (
+                    <div key={agent.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <StatusIndicator status={agent.status} />
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm text-gray-900 truncate">{agent.name}</p>
+                          <p className="text-xs text-gray-500 capitalize">{agent.type} • {agent.provider}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-right">
+                          <p className="text-xs text-gray-500">{agent.stats.totalRequests} requests</p>
+                          <p className="text-xs text-green-600">{Math.round((agent.stats.successfulRequests / Math.max(agent.stats.totalRequests, 1)) * 100)}% success</p>
+                        </div>
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => unassignAgentFromProject(agent.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Brain className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 mb-4">No agents assigned</p>
+                  {selectedProject && (
+                    <Button size="sm" onClick={() => setActiveTab('agents')}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Assign Agents
+                    </Button>
+                  )}
+                </div>
+              )}
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+
+  const renderAgents = () => (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Agent Management</h2>
+          <p className="text-gray-600">Manage your AI agents and MCP servers</p>
+        </div>
+        <Button onClick={() => setIsAddingAgent(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Agent
+        </Button>
+      </div>
+
+      {/* Agents Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        {agents.map((agent) => (
+          <Card key={agent.id} className="relative">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <StatusIndicator status={agent.status} />
+                  <div>
+                    <CardTitle className="text-lg">{agent.name}</CardTitle>
+                    <p className="text-sm text-gray-500 capitalize">{agent.type} • {agent.provider}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => handleTestAgent(agent.id)}>
+                    {agent.status === 'connecting' ? (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+                    ) : (
+                      <Play className="h-3 w-3" />
+                    )}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => handleRemoveAgent(agent.id)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-600">{agent.description}</p>
+              
+              {/* Capabilities */}
+              <div>
+                <p className="text-xs font-medium text-gray-700 mb-2">Capabilities</p>
+                <div className="flex flex-wrap gap-1">
+                  {agent.capabilities.slice(0, 3).map((cap) => (
+                    <Badge key={cap} variant="secondary" className="text-xs">
+                      {cap}
+                    </Badge>
+                  ))}
+                  {agent.capabilities.length > 3 && (
+                    <Badge variant="secondary" className="text-xs">
+                      +{agent.capabilities.length - 3}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t text-center">
+                <div>
+                  <p className="text-lg font-semibold text-gray-900">{agent.stats.totalRequests}</p>
+                  <p className="text-xs text-gray-500">Requests</p>
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-gray-900">{agent.stats.averageResponseTime}ms</p>
+                  <p className="text-xs text-gray-500">Avg Response</p>
+                </div>
+              </div>
+
+              {/* Assign to Project */}
+              {selectedProject && !selectedProject.assignedAgents.includes(agent.id) && (
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => assignAgentToProject(agent.id)}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Assign to {selectedProject.name}
+                </Button>
+              )}
+              
+              {selectedProject && selectedProject.assignedAgents.includes(agent.id) && (
+                <Button 
+                  size="sm" 
+                  variant="secondary" 
+                  className="w-full"
+                  onClick={() => unassignAgentFromProject(agent.id)}
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Assigned to {selectedProject.name}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderProjects = () => (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Projects</h2>
+          <p className="text-gray-600">Manage your development projects</p>
+        </div>
+        <Button onClick={() => setIsAddingProject(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          New Project
+        </Button>
+      </div>
+
+      {/* Projects Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        {projects.map((project) => (
+          <Card 
+            key={project.id} 
+            className={`cursor-pointer transition-all hover:shadow-lg ${
+              selectedProject?.id === project.id ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+            }`}
+            onClick={() => setSelectedProject(project)}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">{project.name}</CardTitle>
+                <div className="flex items-center gap-1">
+                  <StatusIndicator status={project.status} />
+                  <Badge variant="outline" className="text-xs capitalize">{project.status}</Badge>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600">{project.description}</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Project Stats */}
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div>
+                  <p className="text-lg font-semibold text-gray-900">{project.assignedAgents.length}</p>
+                  <p className="text-xs text-gray-500">Agents</p>
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {agents.filter(a => project.assignedAgents.includes(a.id) && a.status === 'online').length}
+                  </p>
+                  <p className="text-xs text-gray-500">Online</p>
+                </div>
+              </div>
+
+              {/* Dates */}
+              <div className="pt-2 border-t">
+                <p className="text-xs text-gray-500">
+                  Created {project.createdAt.toLocaleDateString()}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Updated {project.updatedAt.toLocaleDateString()}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="h-full bg-white">
+      {/* Header */}
+      <div className="border-b bg-gradient-to-r from-blue-50 to-purple-50 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Nexus AI Workspace</h1>
+            <p className="text-gray-600">Real AI agent management and development environment</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {selectedProject && (
+              <Select value={selectedProject.id} onValueChange={(value) => {
+                const project = projects.find(p => p.id === value);
+                if (project) setSelectedProject(project);
+              }}>
+                <SelectTrigger className="w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      <div className="flex items-center gap-2">
+                        <StatusIndicator status={project.status} />
+                        {project.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+        <div className="border-b px-6">
+          <TabsList className="h-12 bg-transparent p-0">
+            <TabsTrigger value="overview" className="flex items-center gap-2 h-10">
+              <Target className="h-4 w-4" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="agents" className="flex items-center gap-2 h-10">
+              <Brain className="h-4 w-4" />
+              Agents
+            </TabsTrigger>
+            <TabsTrigger value="projects" className="flex items-center gap-2 h-10">
+              <Code className="h-4 w-4" />
+              Projects
+            </TabsTrigger>
+            <TabsTrigger value="chat" className="flex items-center gap-2 h-10">
+              <MessageSquare className="h-4 w-4" />
+              AI Chat
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <div className="flex-1 overflow-hidden">
+          <TabsContent value="overview" className="h-full p-6 m-0">
+            <ScrollArea className="h-full">
+              {renderOverview()}
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="agents" className="h-full p-6 m-0">
+            <ScrollArea className="h-full">
+              {renderAgents()}
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="projects" className="h-full p-6 m-0">
+            <ScrollArea className="h-full">
+              {renderProjects()}
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="chat" className="h-full m-0 p-0">
+            <LibreChatFull />
+          </TabsContent>
+        </div>
+      </Tabs>
+
+      {/* Add Agent Dialog */}
+      <Dialog open={isAddingAgent} onOpenChange={setIsAddingAgent}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Agent</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Name *</label>
+                <Input
+                  value={newAgent.name}
+                  onChange={(e) => setNewAgent({...newAgent, name: e.target.value})}
+                  placeholder="My AI Agent"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Type *</label>
+                <Select value={newAgent.type} onValueChange={(value: Agent['type']) => setNewAgent({...newAgent, type: value})}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="api">API Endpoint</SelectItem>
+                    <SelectItem value="mcp">MCP Server</SelectItem>
+                    <SelectItem value="webhook">Webhook</SelectItem>
+                    <SelectItem value="local">Local Agent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Provider</label>
+                <Input
+                  value={newAgent.provider}
+                  onChange={(e) => setNewAgent({...newAgent, provider: e.target.value})}
+                  placeholder="OpenAI, Anthropic, etc."
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Model</label>
+                <Input
+                  value={newAgent.model}
+                  onChange={(e) => setNewAgent({...newAgent, model: e.target.value})}
+                  placeholder="gpt-4, claude-3-sonnet, etc."
+                />
+              </div>
+            </div>
+
+            {newAgent.type !== 'local' && (
+              <div>
+                <label className="text-sm font-medium">Endpoint URL</label>
+                <Input
+                  value={newAgent.endpoint}
+                  onChange={(e) => setNewAgent({...newAgent, endpoint: e.target.value})}
+                  placeholder="https://api.openai.com/v1/chat/completions"
+                />
+              </div>
+            )}
+
+            {newAgent.type === 'api' && (
+              <div>
+                <label className="text-sm font-medium">API Key</label>
+                <Input
+                  type="password"
+                  value={newAgent.apiKey}
+                  onChange={(e) => setNewAgent({...newAgent, apiKey: e.target.value})}
+                  placeholder="Your API key"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="text-sm font-medium">Description</label>
+              <Textarea
+                value={newAgent.description}
+                onChange={(e) => setNewAgent({...newAgent, description: e.target.value})}
+                placeholder="Describe what this agent does..."
+                rows={2}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Capabilities (comma-separated)</label>
+              <Input
+                value={newAgent.capabilities}
+                onChange={(e) => setNewAgent({...newAgent, capabilities: e.target.value})}
+                placeholder="code-generation, debugging, testing"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsAddingAgent(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleAddAgent}>
+                Add Agent
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Project Dialog */}
+      <Dialog open={isAddingProject} onOpenChange={setIsAddingProject}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Project</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Name *</label>
+              <Input
+                value={newProject.name}
+                onChange={(e) => setNewProject({...newProject, name: e.target.value})}
+                placeholder="My Awesome Project"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Description</label>
+              <Textarea
+                value={newProject.description}
+                onChange={(e) => setNewProject({...newProject, description: e.target.value})}
+                placeholder="Describe your project..."
+                rows={3}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Status</label>
+              <Select value={newProject.status} onValueChange={(value: Project['status']) => setNewProject({...newProject, status: value})}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="paused">Paused</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsAddingProject(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleAddProject}>
+                Create Project
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

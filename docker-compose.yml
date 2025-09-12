@@ -1,0 +1,318 @@
+services:
+  # DeepSeek LLM Server with Ollama
+  deepseek:
+    build:
+      context: .
+      dockerfile: docker/deepseek.Dockerfile
+    container_name: weborchestrator-deepseek
+    restart: unless-stopped
+    volumes:
+      # Persist Ollama models
+      - deepseek_models:/root/.ollama/models
+      # Mount logs
+      - ./logs:/app/logs
+    networks:
+      - weborchestrator
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    ports:
+      - "11434:11434"
+
+  # Redis Cache and Session Store
+  redis:
+    image: redis:7-alpine
+    container_name: weborchestrator-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - weborchestrator
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6379:6379"
+
+  # Vision Analysis Agent - OCR and Form Detection Service
+  vision-analyzer:
+    build:
+      context: ./services/vision-analyzer
+      dockerfile: Dockerfile
+    container_name: weborchestrator-vision-analyzer
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - HOST=0.0.0.0
+      - PORT=8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=3
+      - TESSERACT_CMD=/usr/bin/tesseract
+      - DEFAULT_LANGUAGE=eng
+      - MAX_IMAGE_SIZE=5242880
+      - CONFIDENCE_THRESHOLD=0.75
+      - PROCESSING_TIMEOUT=30
+      - CACHE_TTL=3600
+      - LOG_LEVEL=INFO
+      - FORM_SUBMISSION_API_URL=http://backend:3001/api/form-submission
+      - BROWSER_AUTOMATION_URL=http://backend:3001
+    volumes:
+      - ./logs/vision-analyzer:/app/logs
+      - vision_cache:/app/cache
+      - vision_temp:/app/temp
+      - vision_screenshots:/app/screenshots
+      - vision_processed:/app/processed
+      - vision_models:/app/models
+    networks:
+      - weborchestrator
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Advanced Skyvern Browser Automation Agent
+  skyvern-agent:
+    build:
+      context: ./services/skyvern-agent
+      dockerfile: Dockerfile
+    container_name: weborchestrator-skyvern-agent
+    restart: unless-stopped
+    environment:
+      # Server Configuration
+      - HOST=0.0.0.0
+      - PORT=3005
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=production
+      
+      # Performance Targets
+      - SUCCESS_RATE_TARGET=95.0
+      - RESPONSE_TIME_TARGET=12.5
+      - MAX_CONCURRENT_SESSIONS=8
+      
+      # Browser Configuration
+      - DEFAULT_BROWSER=chromium
+      - HEADLESS_MODE=true
+      - BROWSER_TIMEOUT=30000
+      - NAVIGATION_TIMEOUT=30
+      - VIEWPORT_WIDTH=1280
+      - VIEWPORT_HEIGHT=720
+      
+      # Session Management
+      - SESSION_TIMEOUT=300
+      - SESSION_CLEANUP_INTERVAL=60
+      - MAX_SESSION_AGE=1800
+      - SESSION_POOL_SIZE=10
+      
+      # Human Behavior
+      - ENABLE_HUMAN_BEHAVIOR=true
+      - HUMAN_BEHAVIOR_INTENSITY=0.8
+      - TYPING_SPEED_WPM=45.0
+      - TYPING_ACCURACY=0.96
+      
+      # Anti-Detection
+      - ENABLE_STEALTH_MODE=true
+      - ENABLE_ANTI_DETECTION=true
+      - ROTATE_USER_AGENTS=true
+      - FINGERPRINT_RANDOMIZATION=true
+      
+      # External Services
+      - REDIS_URL=redis://redis:6379/1
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      
+      # Integration URLs
+      - FORM_SUBMISSION_API_URL=http://backend:3001/api/form-submission
+      - ORCHESTRATION_AGENT_URL=http://backend:3001/api/orchestration
+      - BROWSER_AUTOMATION_URL=http://backend:3001/api/browser
+      
+      # Captcha Solving
+      - ENABLE_CAPTCHA_SOLVING=true
+      - CAPTCHA_SOLVER_SERVICE=2captcha
+      - CAPTCHA_API_KEY=${CAPTCHA_API_KEY}
+      - CAPTCHA_TIMEOUT=120
+      
+      # Monitoring
+      - ENABLE_PROMETHEUS_METRICS=true
+      - METRICS_PORT=9090
+      - ENABLE_HEALTH_CHECKS=true
+      - HEALTH_CHECK_INTERVAL=30
+      
+      # Advanced Features
+      - ENABLE_SESSION_RECORDING=false
+      - ENABLE_AI_FORM_ANALYSIS=true
+      - ENABLE_COMPUTER_VISION=true
+      - ENABLE_SMART_RETRY=true
+      - MAX_RETRY_ATTEMPTS=3
+      
+      # Performance Tuning
+      - PAGE_LOAD_STRATEGY=normal
+      - RESOURCE_BLOCKING_ENABLED=true
+      - ENABLE_REQUEST_INTERCEPTION=true
+      
+      # Security
+      - SKYVERN_API_KEY=${SKYVERN_API_KEY:-}
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_PER_MINUTE=100
+    
+    volumes:
+      # Persistent storage
+      - skyvern_logs:/app/logs
+      - skyvern_screenshots:/app/screenshots
+      - skyvern_sessions:/app/sessions
+      - skyvern_recordings:/app/recordings
+      - skyvern_data:/app/data
+      - skyvern_models:/app/models
+      
+      # Shared memory for Chrome
+      - /dev/shm:/dev/shm
+    
+    networks:
+      - weborchestrator
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
+    
+    ports:
+      - "3005:3005"  # Skyvern Agent API
+      - "9091:9090"  # Prometheus metrics
+    
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+    
+    # Security context for Chrome
+    security_opt:
+      - seccomp:unconfined
+    
+    # Additional capabilities for Chrome
+    cap_add:
+      - SYS_ADMIN
+
+  # Backend API Server with WebSocket Support
+  backend:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: weborchestrator-backend
+    restart: unless-stopped
+    env_file:
+      - ./docker/docker.env
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - REDIS_URL=redis://redis:6379
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - OLLAMA_BASE_URL=http://deepseek:11434
+      - VISION_ANALYZER_URL=http://vision-analyzer:8080
+      - SKYVERN_AGENT_URL=http://skyvern-agent:3005
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./logs:/app/logs
+    networks:
+      - weborchestrator
+    depends_on:
+      redis:
+        condition: service_healthy
+      deepseek:
+        condition: service_healthy
+      vision-analyzer:
+        condition: service_healthy
+      skyvern-agent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    ports:
+      - "3001:3001"
+
+  # Frontend React Application
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: weborchestrator-frontend
+    restart: unless-stopped
+    networks:
+      - weborchestrator
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    ports:
+      - "3000:80"
+
+volumes:
+  redis_data:
+    driver: local
+  deepseek_models:
+    driver: local
+  vision_cache:
+    driver: local
+  vision_temp:
+    driver: local
+  vision_screenshots:
+    driver: local
+  vision_processed:
+    driver: local
+  vision_models:
+    driver: local
+  skyvern_logs:
+    driver: local
+  skyvern_screenshots:
+    driver: local
+  skyvern_sessions:
+    driver: local
+  skyvern_recordings:
+    driver: local
+  skyvern_data:
+    driver: local
+  skyvern_models:
+    driver: local
+
+networks:
+  weborchestrator:
+    driver: bridge
+    name: weborchestrator-network

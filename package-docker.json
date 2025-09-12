@@ -1,0 +1,18 @@
+{
+  "name": "docker-service",
+  "version": "1.0.0",
+  "description": "Docker execution service for agent deployment",
+  "main": "docker-service.js",
+  "scripts": {
+    "start": "node docker-service.js",
+    "dev": "nodemon docker-service.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
+

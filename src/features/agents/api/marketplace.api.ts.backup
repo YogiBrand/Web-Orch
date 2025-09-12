@@ -1,0 +1,1023 @@
+import { MarketplaceTemplate } from '../model/types';
+import { supabase, AGENTS_TABLE, AGENT_LOGS_TABLE, AGENT_METRICS_TABLE, CONTAINER_INSTANCES_TABLE, createAgent, createContainerInstance, createLog, createMetrics, updateAgentHealth } from '../../../supabase-config.js';
+import config from '../../../env.config.js';
+
+// Generate Docker command based on template and configuration
+function generateDockerCommand(template: MarketplaceTemplate, config: any): string {
+  const baseCommand = `docker run -d --name ${template.slug}_${Date.now()}`;
+
+  // Add port mapping
+  const portMapping = config.port ? `-p ${config.port}:${template.ports?.default || 8080}` : '';
+
+  // Add environment variables
+  let envVars = '';
+  if (config.credentials) {
+    Object.entries(config.credentials).forEach(([key, value]) => {
+      if (value && typeof value === 'string') {
+        envVars += ` -e ${key.toUpperCase()}=${value}`;
+      }
+    });
+  }
+
+  // Add additional ports if specified
+  let additionalPorts = '';
+  if (template.ports?.additional) {
+    template.ports.additional.forEach(port => {
+      additionalPorts += ` -p ${port}:${port}`;
+    });
+  }
+
+  // Add GPU support for certain templates
+  let gpuSupport = '';
+  if (template.slug === 'skyvern') {
+    gpuSupport = ' --gpus all';
+  }
+
+  // Construct final command
+  const finalCommand = `${baseCommand}${gpuSupport}${portMapping}${additionalPorts}${envVars} ${template.slug}:${template.version}`;
+
+  return finalCommand.trim();
+}
+
+// Marketplace API functions
+export const marketplaceApi = {
+  getCatalog: async (filters: { category?: string; search?: string } = {}): Promise<MarketplaceTemplate[]> => {
+    try {
+      console.log('🔄 Fetching marketplace templates from Supabase...');
+      const templates = await getMarketplaceTemplates(filters);
+      console.log(`✅ Retrieved ${templates.length} templates from Supabase`);
+      return templates.map(template => ({
+        ...template,
+        ports: typeof template.ports === 'string' ? JSON.parse(template.ports) : template.ports,
+        capabilities: typeof template.capabilities === 'string' ? JSON.parse(template.capabilities) : template.capabilities,
+        requirements: typeof template.requirements === 'string' ? JSON.parse(template.requirements) : template.requirements,
+        pricing: typeof template.pricing === 'string' ? JSON.parse(template.pricing) : template.pricing,
+        installation: typeof template.installation === 'string' ? JSON.parse(template.installation) : template.installation,
+        defaultConfig: typeof template.defaultConfig === 'string' ? JSON.parse(template.defaultConfig) : template.defaultConfig,
+        ideIntegration: typeof template.ideIntegration === 'string' ? JSON.parse(template.ideIntegration) : template.ideIntegration
+      }));
+    } catch (error) {
+      console.error('❌ Failed to fetch marketplace templates:', error);
+      return [];
+    }
+  },
+
+  getTemplate: async (slug: string): Promise<MarketplaceTemplate | null> => {
+    try {
+      console.log(`🔄 Fetching template ${slug} from Supabase...`);
+      const template = await getMarketplaceTemplate(slug);
+      if (!template) return null;
+
+      console.log(`✅ Retrieved template ${slug} from Supabase`);
+      return {
+        ...template,
+        ports: typeof template.ports === 'string' ? JSON.parse(template.ports) : template.ports,
+        capabilities: typeof template.capabilities === 'string' ? JSON.parse(template.capabilities) : template.capabilities,
+        requirements: typeof template.requirements === 'string' ? JSON.parse(template.requirements) : template.requirements,
+        pricing: typeof template.pricing === 'string' ? JSON.parse(template.pricing) : template.pricing,
+        installation: typeof template.installation === 'string' ? JSON.parse(template.installation) : template.installation,
+        defaultConfig: typeof template.defaultConfig === 'string' ? JSON.parse(template.defaultConfig) : template.defaultConfig,
+        ideIntegration: typeof template.ideIntegration === 'string' ? JSON.parse(template.ideIntegration) : template.ideIntegration
+      };
+    } catch (error) {
+      console.error(`❌ Failed to fetch template ${slug}:`, error);
+      return null;
+    }
+  },
+    name: 'MCP Filesystem Server',
+    slug: 'mcp-filesystem',
+    description: 'File system operations server for MCP protocol',
+    longDescription: 'A Model Context Protocol server that provides secure file system operations including read, write, list, and search capabilities for local and remote file systems.',
+    provider: 'Anthropic',
+    category: 'MCP Server',
+    tags: ['mcp', 'filesystem', 'file-operations', 'security', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181677/pexels-photo-1181677.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '1.0.0',
+    rating: 4.8,
+    reviews: 156,
+    downloads: 12450,
+    runtime: 'docker',
+    capabilities: ['File Read/Write', 'Directory Operations', 'File Search', 'Permission Management'],
+    requirements: ['Docker installed', 'File system access', 'Network connectivity'],
+    ports: { default: 3000 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull mcp/filesystem-server:latest',
+        'Run container: docker run -d -p 3000:3000 -v /host/path:/container/path mcp/filesystem-server',
+        'Configure access permissions and security policies',
+        'Test file operations through MCP protocol'
+      ]
+    },
+    documentation: 'https://docs.anthropic.com/mcp/servers/filesystem',
+    defaultConfig: {
+      protocol: 'http',
+      port: 3000,
+      timeout: 30000,
+      concurrency: 10
+    },
+    ideIntegration: {
+      supportedIdes: ['claude', 'vscode', 'cursor', 'windsurf'],
+      configTemplates: {
+        claude: {
+          command: 'docker',
+          args: ['exec', '${CONTAINER_ID}', 'node', '/app/server.js'],
+          env: {}
+        },
+        vscode: {
+          command: 'docker',
+          args: ['exec', '${CONTAINER_ID}', 'node', '/app/server.js'],
+          env: {}
+        },
+        cursor: {
+          command: 'docker',
+          args: ['exec', '${CONTAINER_ID}', 'node', '/app/server.js'],
+          env: {}
+        }
+      }
+    }
+  },
+  {
+    id: 'mcp-github',
+    name: 'MCP GitHub Server',
+    slug: 'mcp-github',
+    description: 'GitHub integration server for MCP protocol',
+    longDescription: 'Access GitHub repositories, issues, pull requests, and workflows through the Model Context Protocol. Perfect for AI assistants that need to interact with GitHub.',
+    provider: 'Anthropic',
+    category: 'MCP Server',
+    tags: ['mcp', 'github', 'git', 'collaboration', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181263/pexels-photo-1181263.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '1.2.0',
+    rating: 4.7,
+    reviews: 203,
+    downloads: 18750,
+    runtime: 'docker',
+    capabilities: ['Repository Access', 'Issue Management', 'PR Operations', 'Workflow Control'],
+    requirements: ['Docker installed', 'GitHub API token', 'Network access'],
+    ports: { default: 3001 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull mcp/github-server:latest',
+        'Run container: docker run -d -p 3001:3001 -e GITHUB_TOKEN=your_token mcp/github-server',
+        'Configure repository access permissions',
+        'Test GitHub API integration'
+      ]
+    },
+    documentation: 'https://docs.anthropic.com/mcp/servers/github',
+    defaultConfig: {
+      protocol: 'http',
+      port: 3001,
+      timeout: 30000,
+      concurrency: 5
+    }
+  },
+  {
+    id: 'mcp-slack',
+    name: 'MCP Slack Server',
+    slug: 'mcp-slack',
+    description: 'Slack integration server for MCP protocol',
+    longDescription: 'Connect AI assistants to Slack workspaces for real-time communication, channel management, and message processing through the Model Context Protocol.',
+    provider: 'Anthropic',
+    category: 'MCP Server',
+    tags: ['mcp', 'slack', 'communication', 'real-time', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181391/pexels-photo-1181391.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '1.1.0',
+    rating: 4.6,
+    reviews: 178,
+    downloads: 15600,
+    runtime: 'docker',
+    capabilities: ['Message Processing', 'Channel Management', 'User Interactions', 'Real-time Events'],
+    requirements: ['Docker installed', 'Slack API token', 'Workspace access'],
+    ports: { default: 3002 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull mcp/slack-server:latest',
+        'Run container: docker run -d -p 3002:3002 -e SLACK_TOKEN=your_token mcp/slack-server',
+        'Configure Slack app permissions and event subscriptions',
+        'Test real-time message processing'
+      ]
+    },
+    documentation: 'https://docs.anthropic.com/mcp/servers/slack',
+    defaultConfig: {
+      protocol: 'http',
+      port: 3002,
+      timeout: 30000,
+      concurrency: 8
+    }
+  },
+
+  // IDE Clients
+  {
+    id: 'claude-code',
+    name: 'Claude Code',
+    slug: 'claude-code',
+    description: 'AI-powered coding assistant for software development',
+    longDescription: 'Claude Code is an AI-powered coding assistant that helps developers write, debug, and maintain code more efficiently. Integrates with popular IDEs and development workflows.',
+    provider: 'Anthropic',
+    category: 'IDE Client',
+    tags: ['claude', 'coding', 'ai-assistant', 'development', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181672/pexels-photo-1181672.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '0.1.8',
+    rating: 4.9,
+    reviews: 892,
+    downloads: 45670,
+    runtime: 'docker',
+    capabilities: ['Code Generation', 'Debugging Assistance', 'Code Review', 'Documentation'],
+    requirements: ['Docker installed', 'IDE integration', 'Network access'],
+    ports: { default: 3003 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull anthropic/claude-code:latest',
+        'Run container: docker run -d -p 3003:3003 anthropic/claude-code',
+        'Install IDE extension for your development environment',
+        'Configure API keys and development preferences',
+        'Start coding with AI assistance'
+      ]
+    },
+    documentation: 'https://docs.anthropic.com/claude/docs/code',
+    defaultConfig: {
+      protocol: 'http',
+      port: 3003,
+      timeout: 60000,
+      concurrency: 3
+    }
+  },
+  {
+    id: 'cursor',
+    name: 'Cursor',
+    slug: 'cursor',
+    description: 'AI-first code editor with advanced coding assistance',
+    longDescription: 'Cursor is an AI-first code editor built for pair programming with AI. Features advanced code completion, debugging assistance, and seamless AI integration.',
+    provider: 'Cursor',
+    category: 'IDE Client',
+    tags: ['cursor', 'editor', 'ai-first', 'coding', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181673/pexels-photo-1181673.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '1.0.0',
+    rating: 4.8,
+    reviews: 567,
+    downloads: 34560,
+    runtime: 'docker',
+    capabilities: ['AI Code Completion', 'Intelligent Debugging', 'Code Analysis', 'Multi-language Support'],
+    requirements: ['Docker installed', 'VS Code compatible', 'Network access'],
+    ports: { default: 3004 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull cursor/cursor:latest',
+        'Run container: docker run -d -p 3004:3004 cursor/cursor',
+        'Install Cursor VS Code extension',
+        'Configure AI model preferences and API keys',
+        'Start developing with AI-powered editing'
+      ]
+    },
+    documentation: 'https://docs.cursor.com',
+    defaultConfig: {
+      protocol: 'http',
+      port: 3004,
+      timeout: 30000,
+      concurrency: 2
+    }
+  },
+  {
+    id: 'google-cli',
+    name: 'Google CLI Assistant',
+    slug: 'google-cli',
+    description: 'AI-powered command line interface for Google services',
+    longDescription: 'An intelligent CLI assistant that helps developers interact with Google Cloud services, APIs, and tools through natural language commands and AI assistance.',
+    provider: 'Google',
+    category: 'IDE Client',
+    tags: ['google', 'cli', 'cloud', 'gcp', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181392/pexels-photo-1181392.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '2.1.0',
+    rating: 4.7,
+    reviews: 445,
+    downloads: 28900,
+    runtime: 'docker',
+    capabilities: ['GCP Service Management', 'Deployment Automation', 'Monitoring Integration', 'Security Management'],
+    requirements: ['Docker installed', 'Google Cloud credentials', 'CLI access'],
+    ports: { default: 3005 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull google/cli-assistant:latest',
+        'Run container: docker run -d -p 3005:3005 -v ~/.config/gcloud:/root/.config/gcloud google/cli-assistant',
+        'Authenticate with Google Cloud: gcloud auth login',
+        'Configure project and region settings',
+        'Start using AI-powered Google Cloud commands'
+      ]
+    },
+    documentation: 'https://cloud.google.com/sdk/docs',
+    defaultConfig: {
+      protocol: 'http',
+      port: 3005,
+      timeout: 60000,
+      concurrency: 4
+    }
+  },
+
+  // API Clients
+  {
+    id: 'openai-client',
+    name: 'OpenAI API Client',
+    slug: 'openai-client',
+    description: 'Official OpenAI API client with advanced features',
+    longDescription: 'A comprehensive API client for OpenAI services including GPT models, DALL-E, embeddings, and moderation. Features automatic retries, rate limiting, and error handling.',
+    provider: 'OpenAI',
+    category: 'API Client',
+    tags: ['openai', 'api', 'gpt', 'embeddings', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181267/pexels-photo-1181267.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '1.0.0',
+    rating: 4.8,
+    reviews: 1234,
+    downloads: 78900,
+    runtime: 'docker',
+    capabilities: ['GPT Integration', 'Image Generation', 'Embeddings', 'Moderation', 'Streaming'],
+    requirements: ['Docker installed', 'OpenAI API key', 'Network access'],
+    ports: { default: 3006 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull openai/api-client:latest',
+        'Run container: docker run -d -p 3006:3006 -e OPENAI_API_KEY=your_key openai/api-client',
+        'Configure rate limits and usage policies',
+        'Test API connectivity and authentication',
+        'Start making AI-powered API calls'
+      ]
+    },
+    documentation: 'https://platform.openai.com/docs/api-reference',
+    defaultConfig: {
+      protocol: 'https',
+      port: 3006,
+      timeout: 120000,
+      concurrency: 10
+    }
+  },
+  {
+    id: 'anthropic-client',
+    name: 'Anthropic API Client',
+    slug: 'anthropic-client',
+    description: 'Official Anthropic Claude API client',
+    longDescription: 'A robust API client for Anthropic Claude models with advanced safety features, streaming support, and comprehensive error handling for enterprise applications.',
+    provider: 'Anthropic',
+    category: 'API Client',
+    tags: ['anthropic', 'claude', 'api', 'safety', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181268/pexels-photo-1181268.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '1.0.0',
+    rating: 4.9,
+    reviews: 987,
+    downloads: 56700,
+    runtime: 'docker',
+    capabilities: ['Claude Integration', 'Safety Layer', 'Streaming Responses', 'Enterprise Features'],
+    requirements: ['Docker installed', 'Anthropic API key', 'Network access'],
+    ports: { default: 3007 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull anthropic/api-client:latest',
+        'Run container: docker run -d -p 3007:3007 -e ANTHROPIC_API_KEY=your_key anthropic/api-client',
+        'Configure safety settings and usage policies',
+        'Test Claude model integration and responses',
+        'Implement advanced AI features in your application'
+      ]
+    },
+    documentation: 'https://docs.anthropic.com/claude/docs',
+    defaultConfig: {
+      protocol: 'https',
+      port: 3007,
+      timeout: 120000,
+      concurrency: 8
+    }
+  },
+
+  // Docker-based Agents
+  {
+    id: 'browser-use',
+    name: 'Browser Use',
+    slug: 'browser-use',
+    description: 'Automate web browser interactions with AI-powered navigation',
+    longDescription: 'Browser Use enables AI agents to interact with web browsers naturally, performing tasks like form filling, navigation, and data extraction with human-like precision. Perfect for web automation, testing, and data collection.',
+    provider: 'Browser Use Team',
+    category: 'Web Automation',
+    tags: ['browser', 'automation', 'web-scraping', 'ai', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181467/pexels-photo-1181467.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '2.1.0',
+    rating: 4.8,
+    reviews: 342,
+    downloads: 15420,
+    runtime: 'docker',
+    capabilities: ['Web Navigation', 'Form Automation', 'Screenshot Capture', 'Element Detection', 'Cookie Management'],
+    requirements: ['Docker installed', 'Chrome/Chromium browser', 'Minimum 2GB RAM', 'Network access'],
+    ports: { default: 8080, additional: [9222] },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull browseruse/browser-use:latest',
+        'Run container with: docker run -d -p 8080:8080 browseruse/browser-use',
+        'Configure browser automation settings',
+        'Set up API endpoints and authentication',
+        'Test browser connection and automation'
+      ]
+    },
+    documentation: 'https://docs.browser-use.com',
+    defaultConfig: {
+      protocol: 'http',
+      port: 8080,
+      timeout: 30000,
+      concurrency: 1
+    }
+  },
+  {
+    id: 'skyvern',
+    name: 'Skyvern',
+    slug: 'skyvern',
+    description: 'AI-powered web automation with computer vision',
+    longDescription: 'Skyvern combines computer vision with AI to automate complex web workflows, handling dynamic content and visual elements that traditional automation tools struggle with. Advanced visual recognition for modern web applications.',
+    provider: 'Skyvern AI',
+    category: 'Web Automation',
+    tags: ['computer-vision', 'web-automation', 'ai', 'visual-ai', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/2599244/pexels-photo-2599244.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '1.5.2',
+    rating: 4.6,
+    reviews: 128,
+    downloads: 8930,
+    runtime: 'docker',
+    capabilities: ['Visual Recognition', 'Dynamic Content Handling', 'Multi-step Workflows', 'Error Recovery', 'Screenshot Analysis'],
+    requirements: ['Docker installed', 'GPU recommended', 'Minimum 4GB RAM', 'Python 3.8+', 'CUDA support optional'],
+    ports: { default: 8000 },
+    pricing: {
+      free: false,
+      plans: [
+        {
+          name: 'Starter',
+          price: '$29/month',
+          features: ['100 automation runs', 'Basic support', 'Standard models']
+        },
+        {
+          name: 'Pro',
+          price: '$99/month',
+          features: ['1000 automation runs', 'Priority support', 'Advanced models', 'Custom workflows']
+        }
+      ]
+    },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull skyvern/skyvern:latest',
+        'Run with GPU: docker run --gpus all -p 8000:8000 skyvern/skyvern',
+        'Configure computer vision models and API keys',
+        'Initialize automation engine with your workflows',
+        'Test automation scenarios'
+      ]
+    },
+    documentation: 'https://docs.skyvern.ai',
+    defaultConfig: {
+      protocol: 'https',
+      port: 8000,
+      timeout: 60000,
+      concurrency: 2
+    }
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama',
+    slug: 'ollama',
+    description: 'Run large language models locally',
+    longDescription: 'Ollama makes it easy to run large language models locally on your machine. Support for Llama 2, Code Llama, Mistral, and many other models with simple API access. Perfect for privacy-conscious applications.',
+    provider: 'Ollama Team',
+    category: 'AI Agent',
+    tags: ['llm', 'local-ai', 'language-model', 'inference', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '0.1.17',
+    rating: 4.9,
+    reviews: 892,
+    downloads: 45230,
+    runtime: 'docker',
+    capabilities: ['Local LLM Inference', 'Multiple Model Support', 'REST API', 'Streaming Responses', 'Model Management'],
+    requirements: ['Docker installed', '8GB RAM minimum', '16GB+ recommended for larger models', 'CUDA support optional'],
+    ports: { default: 11434 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull ollama/ollama:latest',
+        'Run container: docker run -d -p 11434:11434 ollama/ollama',
+        'Pull your desired models: docker exec -it <container> ollama pull llama2',
+        'Start Ollama service and verify API endpoints',
+        'Configure your application to use the local Ollama instance'
+      ]
+    },
+    documentation: 'https://ollama.ai/docs',
+    defaultConfig: {
+      protocol: 'http',
+      port: 11434,
+      timeout: 120000,
+      concurrency: 1
+    }
+  },
+  {
+    id: 'langchain',
+    name: 'LangChain',
+    slug: 'langchain',
+    description: 'Build applications with LLMs through composable modules',
+    longDescription: 'LangChain is a framework for developing applications powered by language models. It provides modular components for building complex AI applications with chains, agents, and memory systems.',
+    provider: 'LangChain',
+    category: 'AI Framework',
+    tags: ['langchain', 'llm', 'framework', 'ai', 'docker', 'chains'],
+    logoUrl: 'https://images.pexels.com/photos/1181671/pexels-photo-1181671.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '0.1.0',
+    rating: 4.7,
+    reviews: 567,
+    downloads: 23410,
+    runtime: 'docker',
+    capabilities: ['LLM Chains', 'Agent Systems', 'Memory Management', 'Document Processing', 'Tool Integration'],
+    requirements: ['Docker installed', 'Python 3.8+', '4GB RAM minimum', 'API keys for LLM providers'],
+    ports: { default: 8000 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull langchain/langchain:latest',
+        'Run container: docker run -d -p 8000:8000 langchain/langchain',
+        'Configure your LLM provider API keys',
+        'Set up chains and agents through the web interface',
+        'Test your first chain execution'
+      ]
+    },
+    documentation: 'https://docs.langchain.com',
+    defaultConfig: {
+      protocol: 'http',
+      port: 8000,
+      timeout: 60000,
+      concurrency: 3
+    }
+  },
+  {
+    id: 'autogen',
+    name: 'AutoGen',
+    slug: 'autogen',
+    description: 'Multi-agent conversation framework',
+    longDescription: 'AutoGen is a framework for building multi-agent systems where multiple AI agents can converse and collaborate to solve complex tasks. Perfect for building autonomous AI teams.',
+    provider: 'Microsoft',
+    category: 'Multi-Agent',
+    tags: ['autogen', 'multi-agent', 'conversation', 'collaboration', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/3184338/pexels-photo-3184338.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '0.2.0',
+    rating: 4.5,
+    reviews: 234,
+    downloads: 12890,
+    runtime: 'docker',
+    capabilities: ['Multi-Agent Conversations', 'Task Decomposition', 'Agent Coordination', 'Dynamic Agent Creation'],
+    requirements: ['Docker installed', 'Python 3.8+', '4GB RAM minimum', 'OpenAI API key'],
+    ports: { default: 8080 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull microsoft/autogen:latest',
+        'Run container: docker run -d -p 8080:8080 microsoft/autogen',
+        'Configure OpenAI API key and agent settings',
+        'Create your first multi-agent conversation',
+        'Test agent collaboration scenarios'
+      ]
+    },
+    documentation: 'https://microsoft.github.io/autogen/',
+    defaultConfig: {
+      protocol: 'http',
+      port: 8080,
+      timeout: 120000,
+      concurrency: 5
+    }
+  },
+  {
+    id: 'crewai',
+    name: 'CrewAI',
+    slug: 'crewai',
+    description: 'Framework for orchestrating role-playing AI agents',
+    longDescription: 'CrewAI is a framework for orchestrating role-playing AI agents. Create crews of AI agents that collaborate on complex tasks with specific roles and responsibilities.',
+    provider: 'CrewAI',
+    category: 'AI Orchestration',
+    tags: ['crewai', 'role-playing', 'orchestration', 'collaboration', 'docker'],
+    logoUrl: 'https://images.pexels.com/photos/1181396/pexels-photo-1181396.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '0.1.0',
+    rating: 4.4,
+    reviews: 189,
+    downloads: 9876,
+    runtime: 'docker',
+    capabilities: ['Role-Based Agents', 'Task Orchestration', 'Crew Management', 'Collaborative Problem Solving'],
+    requirements: ['Docker installed', 'Python 3.8+', '4GB RAM minimum', 'LLM API access'],
+    ports: { default: 8000 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull crewai/crewai:latest',
+        'Run container: docker run -d -p 8000:8000 crewai/crewai',
+        'Define agent roles and capabilities',
+        'Create your first crew with specific tasks',
+        'Monitor crew performance and collaboration'
+      ]
+    },
+    documentation: 'https://docs.crewai.com',
+    defaultConfig: {
+      protocol: 'http',
+      port: 8000,
+      timeout: 180000,
+      concurrency: 4
+    }
+  },
+  {
+    id: 'n8n',
+    name: 'n8n',
+    slug: 'n8n',
+    description: 'Workflow automation tool with 200+ integrations',
+    longDescription: 'n8n is a workflow automation tool that helps you connect different services and APIs. Build complex workflows with a visual interface and 200+ integrations.',
+    provider: 'n8n GmbH',
+    category: 'Automation',
+    tags: ['n8n', 'workflow', 'automation', 'integrations', 'docker', 'no-code'],
+    logoUrl: 'https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '1.0.0',
+    rating: 4.6,
+    reviews: 445,
+    downloads: 34567,
+    runtime: 'docker',
+    capabilities: ['Workflow Automation', 'API Integration', 'Data Processing', 'Visual Programming', 'Scheduled Tasks'],
+    requirements: ['Docker installed', '2GB RAM minimum', 'Persistent storage for workflows'],
+    ports: { default: 5678 },
+    pricing: {
+      free: false,
+      plans: [
+        {
+          name: 'Community',
+          price: 'Free',
+          features: ['Unlimited workflows', 'Community support', 'Basic integrations']
+        },
+        {
+          name: 'Pro',
+          price: '$20/month',
+          features: ['Advanced integrations', 'Priority support', 'Team collaboration']
+        }
+      ]
+    },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull n8nio/n8n:latest',
+        'Run container: docker run -d -p 5678:5678 n8nio/n8n',
+        'Access web interface at localhost:5678',
+        'Create your first workflow connecting services',
+        'Set up authentication and test integrations'
+      ]
+    },
+    documentation: 'https://docs.n8n.io',
+    defaultConfig: {
+      protocol: 'http',
+      port: 5678,
+      timeout: 30000,
+      concurrency: 10
+    }
+  },
+  {
+    id: 'puppeteer',
+    name: 'Puppeteer',
+    slug: 'puppeteer',
+    description: 'Headless Chrome Node.js API for web automation',
+    longDescription: 'Puppeteer is a Node.js library which provides a high-level API to control headless Chrome or Chromium browsers. Perfect for web scraping, testing, and automation.',
+    provider: 'Google Chrome Team',
+    category: 'Web Automation',
+    tags: ['puppeteer', 'chrome', 'headless', 'web-scraping', 'docker', 'nodejs'],
+    logoUrl: 'https://images.pexels.com/photos/1181269/pexels-photo-1181269.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '21.0.0',
+    rating: 4.7,
+    reviews: 678,
+    downloads: 56789,
+    runtime: 'docker',
+    capabilities: ['Headless Browser Control', 'Screenshot Capture', 'PDF Generation', 'Web Scraping', 'Performance Monitoring'],
+    requirements: ['Docker installed', 'Node.js runtime', '2GB RAM minimum'],
+    ports: { default: 3000 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull puppeteer/puppeteer:latest',
+        'Run container: docker run -d -p 3000:3000 puppeteer/puppeteer',
+        'Access Puppeteer API endpoints',
+        'Write your first automation script',
+        'Test browser automation capabilities'
+      ]
+    },
+    documentation: 'https://pptr.dev',
+    defaultConfig: {
+      protocol: 'http',
+      port: 3000,
+      timeout: 30000,
+      concurrency: 2
+    }
+  },
+  {
+    id: 'selenium',
+    name: 'Selenium Grid',
+    slug: 'selenium',
+    description: 'Browser automation framework with grid support',
+    longDescription: 'Selenium Grid allows you to run your tests on different machines against different browsers in parallel. Perfect for cross-browser testing and large-scale automation.',
+    provider: 'SeleniumHQ',
+    category: 'Test Automation',
+    tags: ['selenium', 'testing', 'grid', 'cross-browser', 'docker', 'automation'],
+    logoUrl: 'https://images.pexels.com/photos/1181271/pexels-photo-1181271.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '4.15.0',
+    rating: 4.5,
+    reviews: 892,
+    downloads: 67890,
+    runtime: 'docker',
+    capabilities: ['Cross-Browser Testing', 'Parallel Execution', 'Grid Management', 'Screenshot Capture', 'Video Recording'],
+    requirements: ['Docker installed', 'Docker Compose for grid', '4GB RAM minimum for hub + nodes'],
+    ports: { default: 4444, additional: [7900, 7901, 7902] },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Selenium Hub: docker pull selenium/hub:latest',
+        'Pull browser nodes: docker pull selenium/node-chrome:latest',
+        'Run hub: docker run -d -p 4444:4444 selenium/hub',
+        'Run nodes: docker run -d --link hub selenium/node-chrome',
+        'Access Grid console and run your first test'
+      ]
+    },
+    documentation: 'https://www.selenium.dev/documentation/grid/',
+    defaultConfig: {
+      protocol: 'http',
+      port: 4444,
+      timeout: 30000,
+      concurrency: 5
+    }
+  },
+  {
+    id: 'playwright',
+    name: 'Playwright',
+    slug: 'playwright',
+    description: 'Fast and reliable end-to-end testing framework',
+    longDescription: 'Playwright is a framework for Web Testing and Automation. It allows reliable end-to-end testing for modern web apps with a single API that works across all modern browsers.',
+    provider: 'Microsoft',
+    category: 'Test Automation',
+    tags: ['playwright', 'testing', 'e2e', 'automation', 'docker', 'microsoft'],
+    logoUrl: 'https://images.pexels.com/photos/1181273/pexels-photo-1181273.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '1.40.0',
+    rating: 4.8,
+    reviews: 567,
+    downloads: 45678,
+    runtime: 'docker',
+    capabilities: ['End-to-End Testing', 'Cross-Browser Support', 'Mobile Testing', 'API Testing', 'Screenshot/Video Capture'],
+    requirements: ['Docker installed', 'Node.js runtime', '2GB RAM minimum'],
+    ports: { default: 9323 },
+    pricing: { free: true },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull mcr.microsoft.com/playwright:latest',
+        'Run container: docker run -d -p 9323:9323 mcr.microsoft.com/playwright',
+        'Access Playwright test runner',
+        'Write your first end-to-end test',
+        'Configure browser settings and test environments'
+      ]
+    },
+    documentation: 'https://playwright.dev',
+    defaultConfig: {
+      protocol: 'http',
+      port: 9323,
+      timeout: 30000,
+      concurrency: 3
+    }
+  },
+  {
+    id: 'cypress',
+    name: 'Cypress',
+    slug: 'cypress',
+    description: 'Fast, easy and reliable testing for web applications',
+    longDescription: 'Cypress is a next generation front-end testing tool built for the modern web. It addresses the key pain points developers face when testing modern applications.',
+    provider: 'Cypress.io',
+    category: 'Test Automation',
+    tags: ['cypress', 'testing', 'frontend', 'e2e', 'docker', 'javascript'],
+    logoUrl: 'https://images.pexels.com/photos/1181275/pexels-photo-1181275.jpeg?auto=compress&cs=tinysrgb&w=160&h=160&fit=crop',
+    version: '13.0.0',
+    rating: 4.6,
+    reviews: 734,
+    downloads: 56789,
+    runtime: 'docker',
+    capabilities: ['Frontend Testing', 'API Testing', 'Component Testing', 'Visual Testing', 'Time Travel Debugging'],
+    requirements: ['Docker installed', 'Node.js runtime', '2GB RAM minimum'],
+    ports: { default: 3000 },
+    pricing: {
+      free: false,
+      plans: [
+        {
+          name: 'Free',
+          price: 'Free',
+          features: ['Unlimited testing', 'Community support', 'Basic dashboard']
+        },
+        {
+          name: 'Team',
+          price: '$75/month',
+          features: ['Team collaboration', 'Advanced dashboard', 'Parallelization']
+        }
+      ]
+    },
+    installation: {
+      steps: [
+        'Pull Docker image: docker pull cypress/included:latest',
+        'Run container: docker run -d -p 3000:3000 cypress/included',
+        'Mount your project directory as volume',
+        'Run your first Cypress test',
+        'Configure test environment and CI/CD integration'
+      ]
+    },
+    documentation: 'https://docs.cypress.io',
+    defaultConfig: {
+      protocol: 'http',
+      port: 3000,
+      timeout: 30000,
+      concurrency: 1
+    }
+  }
+];
+
+export const marketplaceApi = {
+  getCatalog: async (): Promise<MarketplaceTemplate[]> => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return mockTemplates;
+  },
+
+  getTemplate: async (slug: string): Promise<MarketplaceTemplate | null> => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return mockTemplates.find(t => t.slug === slug) || null;
+  },
+
+  install: async (templateSlug: string, config: any): Promise<{ success: boolean; agentId?: string; containerId?: string }> => {
+    try {
+      const template = mockTemplates.find(t => t.slug === templateSlug);
+      if (!template) {
+        throw new Error('Template not found');
+      }
+
+      // Generate Docker run command based on template and config
+      const dockerCommand = generateDockerCommand(template, config);
+
+      console.log('Generated Docker command:', dockerCommand);
+
+      // Execute Docker command via the Docker service
+      const response = await fetch('http://localhost:5175/api/docker/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          command: dockerCommand,
+          timeout: 60000 // 60 seconds timeout
+        })
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Docker command failed');
+      }
+
+      // Extract container ID from Docker output
+      const containerId = result.containerId || result.output.trim().split('\n').pop()?.trim();
+      console.log('Container created with ID:', containerId);
+
+      try {
+        // Create agent record in Supabase
+        console.log('📝 Creating agent record in Supabase...');
+        const agentData = {
+          name: template.name,
+          type: template.category.toLowerCase().replace(' ', '-'),
+          runtime: 'docker',
+          status: 'running',
+          version: template.version,
+          provider: template.provider,
+          category: template.category,
+          description: template.description,
+          container_id: containerId,
+          container_name: `${template.slug}_${Date.now()}`,
+          image_name: `${template.slug}:${template.version}`,
+          port: config.port || template.ports?.default,
+          config: config,
+          capabilities: template.capabilities,
+          endpoints: template.endpoints || [],
+          health_status: 'healthy',
+          metadata: {
+            docker_image: `${template.slug}:${template.version}`,
+            ports: template.ports?.default ? [template.ports.default] : [],
+            created_via: 'marketplace',
+            deployment_timestamp: new Date().toISOString()
+          }
+        };
+
+        const createdAgent = await createAgent(agentData);
+        console.log(`✅ Agent created in Supabase: ${createdAgent.id}`);
+
+        // Create container instance record
+        if (containerId) {
+          console.log('🐳 Creating container instance record...');
+          const containerData = {
+            agent_id: createdAgent.id,
+            container_id: containerId,
+            container_name: agentData.container_name,
+            image_name: agentData.image_name,
+            status: 'running',
+            port_mappings: config.port ? [{ host: config.port, container: template.ports?.default || 8080 }] : [],
+            environment_vars: config.credentials || {},
+            volumes: [],
+            started_at: new Date().toISOString()
+          };
+
+          await createContainerInstance(containerData);
+          console.log(`✅ Container instance created for ${containerId}`);
+        }
+
+        // Create initial log entry
+        await createLog({
+          agent_id: createdAgent.id,
+          level: 'info',
+          message: `Agent ${template.name} deployed successfully via marketplace`,
+          source: 'marketplace',
+          metadata: {
+            template: template.slug,
+            version: template.version,
+            container_id: containerId
+          }
+        });
+
+        // Create initial metrics
+        await createMetrics({
+          agent_id: createdAgent.id,
+          requests_per_minute: 0,
+          average_response_time: 0,
+          error_rate: 0,
+          uptime_percentage: 100,
+          memory_usage: 0,
+          cpu_usage: 0,
+          network_in: 0,
+          network_out: 0
+        });
+
+        // Handle MCP server IDE integration
+        if (template.category === 'MCP Server' && config.ideIntegration) {
+          console.log('🔧 Setting up MCP server IDE integration...');
+          try {
+            const mcpResponse = await fetch('http://localhost:5176/api/mcp/add-to-ide', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                serverId: template.slug,
+                ideId: config.ideIntegration.ide,
+                config: {
+                  command: 'docker',
+                  args: ['exec', containerId, 'node', '/app/server.js'],
+                  env: config.ideIntegration.env || {}
+                }
+              })
+            });
+
+            if (mcpResponse.ok) {
+              console.log(`✅ MCP server integrated with ${config.ideIntegration.ide}`);
+              await createLog({
+                agent_id: createdAgent.id,
+                level: 'info',
+                message: `MCP server integrated with ${config.ideIntegration.ide}`,
+                source: 'mcp-integration',
+                metadata: {
+                  ide: config.ideIntegration.ide,
+                  integration_type: 'ide'
+                }
+              });
+            } else {
+              console.warn(`⚠️ MCP integration failed for ${config.ideIntegration.ide}`);
+            }
+          } catch (mcpError) {
+            console.warn('⚠️ MCP integration service not available:', mcpError.message);
+          }
+        }
+
+        console.log(`🎉 Agent ${template.name} fully deployed and registered!`);
+
+        return {
+          success: true,
+          agentId: createdAgent.id,
+          containerId
+        };
+
+      } catch (supabaseError) {
+        console.error('❌ Failed to save to Supabase:', supabaseError);
+        // Still return success for the Docker deployment, but note the database error
+        return {
+          success: true,
+          agentId: `agent_${Date.now()}`,
+          containerId,
+          warning: 'Docker deployment successful, but database save failed'
+        };
+      }
+    } catch (error) {
+      console.error('Failed to install agent:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+};

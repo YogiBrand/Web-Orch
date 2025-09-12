@@ -1,0 +1,31 @@
+# Agent Registry & Marketplace Backend Container
+FROM node:20-alpine
+
+RUN apk add --no-cache curl
+
+WORKDIR /app
+
+# Copy package files
+COPY ./agent-marketplace/package.json ./
+COPY ./agent-marketplace/package-lock.json ./
+
+# Copy shared packages
+COPY ./packages/ ./packages/
+
+# Install dependencies
+RUN npm install
+
+# Copy the backend server
+COPY ./agent-marketplace/backend-server.js ./
+COPY ./agent-marketplace/supabase-config.js ./
+COPY ./agent-marketplace/env.config.js ./
+
+# Expose port
+EXPOSE 3002
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:3002/health || exit 1
+
+# Start the backend server
+CMD ["node", "backend-server.js"]
