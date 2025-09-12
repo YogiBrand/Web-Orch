@@ -22,8 +22,18 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    strictPort: true, // Prevent port fallback
+    strictPort: false, // Allow port fallback for Replit
     host: '0.0.0.0',
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      '*.replit.dev',
+      '*.replit.co',
+      '*.repl.co',
+      /^.*\.replit\.dev$/,
+      /^.*\.replit\.co$/,
+      /^.*\.repl\.co$/,
+    ],
     hmr: {
       protocol: 'ws',
       host: 'localhost',
